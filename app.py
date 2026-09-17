@@ -21,39 +21,37 @@ def open_cleaner():
     st.progress(step / total_steps, text=f"Step {step} of {total_steps}")
     st.divider()
 
-    if step == 1:
-        left, right = st.columns([1, 1])
+    # ── Step 1: Upload ───────────────────────────────────────────────────────
 
-        with left:
-            uploaded_file = st.file_uploader(
-                "Upload file",
-                type=["xlsx", "xls", "csv"],
-                label_visibility="collapsed",
+    if step == 1:
+        uploaded_file = st.file_uploader(
+            "Upload file",
+            type=["xlsx", "xls", "csv"],
+            label_visibility="collapsed",
+        )
+
+        if uploaded_file is not None:
+            try:
+                raw_df = pd.read_excel(uploaded_file, header=None)
+                st.session_state["raw_df"] = raw_df
+                st.session_state["file_name"] = uploaded_file.name
+            except Exception as e:
+                st.error(f"Could not read file: {e}")
+                return
+
+            st.success(
+                f"Loaded: {uploaded_file.name} "
+                f"({raw_df.shape[0]:,} rows, {raw_df.shape[1]:,} columns)"
             )
 
-            if uploaded_file is not None:
-                try:
-                    raw_df = pd.read_excel(uploaded_file, header=None)
-                    st.session_state["raw_df"] = raw_df
-                    st.session_state["file_name"] = uploaded_file.name
-                except Exception as e:
-                    st.error(f"Could not read file: {e}")
-                    return
-
-                st.success(
-                    f"Loaded: {uploaded_file.name} "
-                    f"({raw_df.shape[0]:,} rows, {raw_df.shape[1]:,} columns)"
-                )
-
-        with right:
-            if st.session_state["raw_df"] is not None:
-                st.dataframe(
-                    safe_display_df(st.session_state["raw_df"]),
-                    width="stretch",
-                    height="content",
-                )
-            else:
-                st.info("Upload an Excel or CSV file to get started.")
+            st.dataframe(
+                safe_display_df(raw_df),
+                width="stretch",
+                height=400,
+                hide_index=True,
+            )
+        else:
+            st.info("Upload an Excel or CSV file to get started.")
 
         st.divider()
 
@@ -63,10 +61,12 @@ def open_cleaner():
                 "Next",
                 type="primary",
                 width="stretch",
-                disabled=st.session_state["raw_df"] is None,
+                disabled=st.session_state.get("raw_df") is None,
             ):
                 st.session_state["current_step"] = 2
                 st.rerun()
+
+    # ── Step 2: Header Row ───────────────────────────────────────────────────
 
     elif step == 2:
         raw_df = st.session_state["raw_df"]
@@ -75,50 +75,46 @@ def open_cleaner():
             st.rerun()
             return
 
-        left, right = st.columns([1, 2])
+        st.subheader("Select Header Row")
 
-        with left:
-            st.subheader("Header Row")
+        non_empty_counts = raw_df.notna().sum(axis=1).tolist()
+        suggested_row = non_empty_counts.index(max(non_empty_counts))
 
-            non_empty_counts = raw_df.notna().sum(axis=1).tolist()
-            suggested_row = non_empty_counts.index(max(non_empty_counts))
+        header_row = st.number_input(
+            "Data starts from row",
+            min_value=1,
+            max_value=len(raw_df),
+            value=suggested_row + 1,
+            step=1,
+        )
 
-            header_row = st.number_input(
-                "Start reading data from row",
-                min_value=1,
-                max_value=len(raw_df),
-                value=suggested_row + 1,
-                step=1,
-            )
+        header_idx = header_row - 1
 
-            header_idx = header_row - 1
+        new_columns = raw_df.iloc[header_idx].astype(str).tolist()
+        seen = {}
+        unique_columns = []
+        for col in new_columns:
+            if col in seen:
+                seen[col] += 1
+                unique_columns.append(f"{col}_{seen[col]}")
+            else:
+                seen[col] = 0
+                unique_columns.append(col)
 
-            new_columns = raw_df.iloc[header_idx].astype(str).tolist()
-            seen = {}
-            unique_columns = []
-            for col in new_columns:
-                if col in seen:
-                    seen[col] += 1
-                    unique_columns.append(f"{col}_{seen[col]}")
-                else:
-                    seen[col] = 0
-                    unique_columns.append(col)
+        cleaned_df = raw_df.iloc[header_idx + 1:].copy()
+        cleaned_df.columns = unique_columns
+        cleaned_df.reset_index(drop=True, inplace=True)
 
-            cleaned_df = raw_df.iloc[header_idx + 1:].copy()
-            cleaned_df.columns = unique_columns
-            cleaned_df.reset_index(drop=True, inplace=True)
+        st.success(
+            f"Row {header_row} selected. {len(unique_columns)} columns detected."
+        )
 
-            st.success(
-                f"Row {header_row} selected. {len(unique_columns)} columns detected."
-            )
-
-        with right:
-            st.subheader("Preview")
-            st.dataframe(
-                safe_display_df(cleaned_df),
-                width="stretch",
-                height="content",
-            )
+        st.dataframe(
+            safe_display_df(cleaned_df),
+            width="stretch",
+            height=400,
+            hide_index=True,
+        )
 
         st.divider()
 
@@ -134,6 +130,8 @@ def open_cleaner():
                 st.session_state["current_step"] = 3
                 st.rerun()
 
+    # ── Step 3: Edit Columns ─────────────────────────────────────────────────
+
     elif step == 3:
         cleaned_df = st.session_state["cleaned_df"]
         unique_columns = st.session_state["unique_columns"]
@@ -142,7 +140,7 @@ def open_cleaner():
             st.rerun()
             return
 
-        left, right = st.columns([1, 2])
+        left, right = st.columns([1, 1])
 
         with left:
             st.subheader("Edit Columns")
@@ -159,7 +157,6 @@ def open_cleaner():
                     "Original Name": st.column_config.TextColumn(
                         "Original Name",
                         disabled=True,
-                        help="Current column name (read-only).",
                     ),
                     "New Name": st.column_config.TextColumn(
                         "New Name",
@@ -207,7 +204,8 @@ def open_cleaner():
                 st.dataframe(
                     safe_display_df(final_df),
                     width="stretch",
-                    height="content",
+                    height=400,
+                    hide_index=True,
                 )
             else:
                 st.info("No columns selected.")
@@ -230,6 +228,8 @@ def open_cleaner():
                 st.session_state["current_step"] = 4
                 st.rerun()
 
+    # ── Step 4: Download ─────────────────────────────────────────────────────
+
     elif step == 4:
         final_df = st.session_state["final_df"]
         if final_df is None:
@@ -237,7 +237,7 @@ def open_cleaner():
             st.rerun()
             return
 
-        left, right = st.columns([1, 2])
+        left, right = st.columns([1, 1])
 
         with left:
             st.subheader("Download")
@@ -275,7 +275,8 @@ def open_cleaner():
             st.dataframe(
                 safe_display_df(final_df),
                 width="stretch",
-                height="content",
+                height=400,
+                hide_index=True,
             )
 
         st.divider()
@@ -288,6 +289,18 @@ def open_cleaner():
 
 
 st.set_page_config(page_title="Excel Cleaner", page_icon=None, layout="wide")
+
+st.markdown(
+    """
+    <style>
+        [data-testid="stDialog"] {
+            max-width: 95vw !important;
+            width: 95vw !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 if "current_step" not in st.session_state:
     st.session_state["current_step"] = 1
