@@ -6,10 +6,15 @@ import pandas as pd
 def safe_display_df(df):
     display_df = df.copy()
     for col in display_df.columns:
-        if display_df[col].dtype == object:
-            display_df[col] = display_df[col].apply(
-                lambda x: str(x) if x is not None else ""
-            )
+        try:
+            if hasattr(display_df[col], "dtype") and display_df[col].dtype == object:
+                display_df[col] = display_df[col].apply(
+                    lambda x: str(x) if x is not None else ""
+                )
+            else:
+                display_df[col] = display_df[col].astype(str)
+        except Exception:
+            display_df[col] = display_df[col].astype(str)
     return display_df
 
 
