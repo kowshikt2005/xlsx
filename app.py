@@ -13,30 +13,16 @@ def safe_display_df(df):
     return display_df
 
 
-def show_preview(df, *, show_index: bool = False) -> None:
-    """Display a consistently sized, easy-to-scan dataframe preview."""
-    st.caption(f"Previewing {preview_summary(df.shape[0], df.shape[1])}")
-    st.dataframe(
-        safe_display_df(df),
-        width="stretch",
-        height=preview_height(df.shape[0]),
-        hide_index=not show_index,
-    )
-
-
-# ── Cleaner Workspace ───────────────────────────────────────────────────────
-
-def render_cleaner():
+@st.dialog("Excel Cleaner", width="large", dismissible=True)
+def open_cleaner():
     step = st.session_state["current_step"]
     total_steps = 4
 
     st.progress(step / total_steps, text=f"Step {step} of {total_steps}")
     st.divider()
 
-    # ── Step 1: Upload ───────────────────────────────────────────────────────
-
     if step == 1:
-        left, right = st.columns([1, 2])
+        left, right = st.columns([1, 1])
 
         with left:
             uploaded_file = st.file_uploader(
@@ -61,9 +47,11 @@ def render_cleaner():
 
         with right:
             if st.session_state["raw_df"] is not None:
-                with st.container(border=True):
-                    st.subheader("Sheet preview")
-                    show_preview(st.session_state["raw_df"], show_index=True)
+                st.dataframe(
+                    safe_display_df(st.session_state["raw_df"]),
+                    width="stretch",
+                    height="content",
+                )
             else:
                 st.info("Upload an Excel or CSV file to get started.")
 
@@ -80,8 +68,6 @@ def render_cleaner():
                 st.session_state["current_step"] = 2
                 st.rerun()
 
-    # ── Step 2: Header Row ───────────────────────────────────────────────────
-
     elif step == 2:
         raw_df = st.session_state["raw_df"]
         if raw_df is None:
@@ -89,9 +75,9 @@ def render_cleaner():
             st.rerun()
             return
 
-        preview_column, controls_column = st.columns(header_preview_layout())
+        left, right = st.columns([1, 2])
 
-        with controls_column:
+        with left:
             st.subheader("Header Row")
 
             non_empty_counts = raw_df.notna().sum(axis=1).tolist()
@@ -126,10 +112,13 @@ def render_cleaner():
                 f"Row {header_row} selected. {len(unique_columns)} columns detected."
             )
 
-        with preview_column:
-            with st.container(border=True):
-                st.subheader("Preview")
-                show_preview(cleaned_df)
+        with right:
+            st.subheader("Preview")
+            st.dataframe(
+                safe_display_df(cleaned_df),
+                width="stretch",
+                height="content",
+            )
 
         st.divider()
 
@@ -144,8 +133,6 @@ def render_cleaner():
                 st.session_state["unique_columns"] = unique_columns
                 st.session_state["current_step"] = 3
                 st.rerun()
-
-    # ── Step 3: Edit Columns ─────────────────────────────────────────────────
 
     elif step == 3:
         cleaned_df = st.session_state["cleaned_df"]
@@ -215,12 +202,15 @@ def render_cleaner():
             final_df.rename(columns=rename_map, inplace=True)
 
         with right:
-            with st.container(border=True):
-                st.subheader("Preview")
-                if cols_to_keep > 0:
-                    show_preview(final_df)
-                else:
-                    st.info("No columns selected.")
+            st.subheader("Preview")
+            if cols_to_keep > 0:
+                st.dataframe(
+                    safe_display_df(final_df),
+                    width="stretch",
+                    height="content",
+                )
+            else:
+                st.info("No columns selected.")
 
         st.divider()
 
@@ -239,8 +229,6 @@ def render_cleaner():
                 st.session_state["final_df"] = final_df
                 st.session_state["current_step"] = 4
                 st.rerun()
-
-    # ── Step 4: Download ─────────────────────────────────────────────────────
 
     elif step == 4:
         final_df = st.session_state["final_df"]
@@ -283,9 +271,12 @@ def render_cleaner():
             )
 
         with right:
-            with st.container(border=True):
-                st.subheader("Final preview")
-                show_preview(final_df)
+            st.subheader("Final Preview")
+            st.dataframe(
+                safe_display_df(final_df),
+                width="stretch",
+                height="content",
+            )
 
         st.divider()
 
@@ -296,27 +287,7 @@ def render_cleaner():
                 st.rerun()
 
 
-# ── Main Page ────────────────────────────────────────────────────────────────
-
 st.set_page_config(page_title="Excel Cleaner", page_icon=None, layout="wide")
-
-st.markdown(
-    """
-    <style>
-        [data-testid="stDataFrame"] {
-            border: 1px solid #d6e2ef;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-
-        [data-testid="stDataFrame"] [role="columnheader"] {
-            background: #f4f8fc;
-            font-weight: 650;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 if "current_step" not in st.session_state:
     st.session_state["current_step"] = 1
@@ -326,7 +297,4 @@ if "current_step" not in st.session_state:
     st.session_state["unique_columns"] = None
     st.session_state["final_df"] = None
 
-st.title("Excel Cleaner")
-st.caption("Clean imported spreadsheets in four guided steps.")
-
-render_cleaner()
+open_cleaner()
